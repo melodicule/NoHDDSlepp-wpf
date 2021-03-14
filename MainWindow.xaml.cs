@@ -35,7 +35,9 @@ namespace NoHDDSleep
 
         private const string NAME = "NoSleep.empty";
         private const int BYTE_PER_MB = 1024 * 1024;
-        private const int BLOCKS = 128;
+        private const int BLOCKS = 144;
+        private const double CANVAS_HEIGHT = 128;
+        private const double CANVAS_WIDTH = 128;
 
         DispatcherTimer timer = new DispatcherTimer();
         FileStream stream;
@@ -59,23 +61,25 @@ namespace NoHDDSleep
         public MainWindow()
         {
             InitializeComponent();
+            int blocksPerRow = (int)Math.Sqrt(BLOCKS);
+            int rows = (int)Math.Ceiling(BLOCKS * 1.0 / blocksPerRow);
+
             for (int i = 0; i < BLOCKS; i++)
             {
                 rectangles[i] = new Rectangle()
                 {
-                    Width = 16,
-                    Height = 8,
+                    Width = CANVAS_WIDTH / blocksPerRow,
+                    Height = CANVAS_HEIGHT / rows,
                     Stroke = Brushes.Transparent,
                     StrokeThickness = 0.5,
                     Fill = new SolidColorBrush(Colors.WhiteSmoke)
                 };
                 canvas.Children.Add(rectangles[i]);
-                rectangles[i].SetValue(Canvas.LeftProperty, (i % 8) * 16.0);
-                rectangles[i].SetValue(Canvas.TopProperty, (i / 8) * 8.0);
+                rectangles[i].SetValue(Canvas.LeftProperty, (i % blocksPerRow) * (CANVAS_WIDTH / blocksPerRow));
+                rectangles[i].SetValue(Canvas.TopProperty, (i / blocksPerRow) * (CANVAS_HEIGHT / rows));
             }
 
-
-            //创建关键帧动画
+            #region 创建关键帧动画
             CubicEase easeOut = new CubicEase();
             CubicEase easeIn = new CubicEase();
             easeOut.EasingMode = EasingMode.EaseOut;
@@ -114,6 +118,7 @@ namespace NoHDDSleep
 
             write.Duration = TimeSpan.FromSeconds(2);
             read.Duration = TimeSpan.FromSeconds(2);
+            #endregion
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -133,25 +138,31 @@ namespace NoHDDSleep
             OnPropertyChanged("SelectedDriver");
 
             //创建文件
-            stream = new FileStream(Path.Combine(symbols[SelectedDriver], NAME), FileMode.OpenOrCreate);
-            
-            //设置基本参数
-            timer.Tick += Timer_Tick;
-            timer.Interval = TimeSpan.FromSeconds(0.5);
-
-            await Task.Run(() =>
+            try
             {
-                for (int i = 0; i < BLOCKS; i++)
-                {
-                    stream.Write(buffer, 0, buffer.Length);
-                }
+                stream = new FileStream(Path.Combine(symbols[SelectedDriver], NAME), FileMode.Create);
+                //设置基本参数
+                timer.Tick += Timer_Tick;
+                timer.Interval = TimeSpan.FromSeconds(0.5);
 
-                Dispatcher.Invoke(() =>
+                await Task.Run(() =>
                 {
-                    timer.Start();
+                    for (int i = 0; i < BLOCKS; i++)
+                    {
+                        stream.Write(buffer, 0, buffer.Length);
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        timer.Start();
+                    });
                 });
-            });
-            //开始
+                //开始
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
         }
 
         private void Timer_Tick(object sender, EventArgs e)
@@ -177,13 +188,16 @@ namespace NoHDDSleep
         private void Button_Click(object sender, RoutedEventArgs e)
         {
             Button bt = sender as Button;
-            if (bt.Content.ToString() == "开始")
+            bt.Visibility = Visibility.Collapsed;
+            if (bt.Tag.ToString() == "开始")
             {
                 timer.IsEnabled = true;
+                btPause.Visibility = Visibility.Visible;
             }
             else
             {
                 timer.IsEnabled = false;
+                btStart.Visibility = Visibility.Visible;
             }
         }
 
@@ -194,7 +208,7 @@ namespace NoHDDSleep
             {
                 stream.Dispose();
                 stream = null;
-                stream = new FileStream(Path.Combine(symbols[SelectedDriver], NAME), FileMode.OpenOrCreate);
+                stream = new FileStream(Path.Combine(symbols[SelectedDriver], NAME), FileMode.Create);
                 Task.Run(() =>
                 {
                     for (int i = 0; i < BLOCKS; i++)
@@ -211,6 +225,26 @@ namespace NoHDDSleep
             //创建文件
             
             
+        }
+
+        private void Win_Closing(object sender, CancelEventArgs e)
+        {
+            if (timer != null)
+            {
+                timer.Stop();
+            }
+            if (stream != null && stream.CanWrite)
+            {
+                stream.Dispose();
+                try
+                {
+                    File.Delete(Path.Combine(symbols[SelectedDriver], NAME));
+                }
+                catch (Exception)
+                {
+
+                }
+            }
         }
     }
 }
